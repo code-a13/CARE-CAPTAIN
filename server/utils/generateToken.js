@@ -1,8 +1,10 @@
-const express = require('express');
-const router = express.Router();
-const { createBooking } = require('../controllers/bookingController');
+const jwt = require('jsonwebtoken');
 
-// When a POST request hits /api/bookings, send it to the controller
-router.post('/', createBooking);
+const generateToken = (id) => {
+  // Signs a token with the user's ID and your secret key, expiring in 30 days
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret_key', {
+    expiresIn: '30d',
+  });
+};
 
-module.exports = router;
+module.exports = generateToken;

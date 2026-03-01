@@ -1,58 +1,48 @@
-const Booking = require('../models/Booking'); // Using the Booking schema we discussed earlier
-const Assistant = require('../models/Assistant');
+// server/controllers/bookingController.js
+const Booking = require('../models/Booking');
 
 // @desc    Create a new assistance booking
 // @route   POST /api/bookings
+// @access  Protected (Requires JWT - we will add this middleware later)
 const createBooking = async (req, res) => {
   try {
+    // 1. Extract the data sent by the React frontend
     const { userId, requiresTransport, durationHours, lng, lat } = req.body;
 
-    // 1. Logic Validation
-    if (!lng || !lat) {
-      return res.status(400).json({ message: 'Map coordinates are required, macha!' });
+    // 2. Basic Validation
+    if (!userId || !durationHours || !lng || !lat) {
+      return res.status(400).json({ message: 'Please provide all required fields, including location coordinates.' });
     }
 
-    // 2. Find an available assistant based on transport requirement
-    const query = { isAvailable: true };
-    if (requiresTransport) {
-      query.hasVehicle = true; // Only find assistants with a bike/car
-    }
-
-    // Note: For a prototype, we just pick the first available one. 
-    // Later, we will use geo-spatial queries to find the *nearest* one.
-    const assignedAssistant = await Assistant.findOne(query);
-
-    if (!assignedAssistant) {
-      return res.status(404).json({ message: 'No suitable assistants available right now.' });
-    }
-
-    // 3. Create the Booking in DB
-    const newBooking = await Booking.create({
+    // 3. Construct the Database Document
+    const booking = await Booking.create({
       userId,
-      assistantId: assignedAssistant._id,
-      requiresTransport,
-      hourlyRate: requiresTransport ? 250 : 150, // Higher rate if transport is needed
+      requiresTransport: requiresTransport || false,
       durationHours,
       pickupLocation: {
         type: 'Point',
-        coordinates: [lng, lat] // MongoDB requires Longitude first, then Latitude!
-      }
+        coordinates: [lng, lat] // MongoDB requires Longitude FIRST, then Latitude
+      },
+      status: 'pending'
     });
 
-    // 4. Mark assistant as busy
-    assignedAssistant.isAvailable = false;
-    await assignedAssistant.save();
-
-    res.status(201).json({
-      success: true,
-      data: newBooking,
-      message: 'Caregiver booked successfully!'
-    });
+    // 4. Return the successful booking ID to the frontend
+    if (booking) {
+      res.status(201).json({
+        message: 'Booking created successfully',
+        bookingId: booking._id,
+        status: booking.status
+      });
+    } else {
+      res.status(400).json({ message: 'Invalid booking data received' });
+    }
 
   } catch (error) {
-    console.error('Booking Error:', error);
-    res.status(500).json({ message: 'Server error while booking' });
+    console.error("CREATE BOOKING ERROR:", error);
+    res.status(500).json({ message: 'Server Error', error: error.message });
   }
 };
 
-module.exports = { createBooking };
+module.exports = {
+  createBooking
+};

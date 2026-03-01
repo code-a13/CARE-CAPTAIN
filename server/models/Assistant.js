@@ -1,28 +1,44 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs'); // MUST import bcrypt here!
+const bcrypt = require('bcryptjs'); // CRITICAL: This was likely missing causing the 500 error
 
 const assistantSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  phone: { type: String, required: true, unique: true },
-  password: { type: String, required: true }, // Added this!
-  hasVehicle: { type: Boolean, required: true, default: false },
-  isAvailable: { type: Boolean, default: true },
-  rating: { type: Number, default: 5.0 },
-  role: { type: String, default: 'assistant' } // Helps identify them easily
+  name: { 
+    type: String, 
+    required: true 
+  },
+  phone: { 
+    type: String, 
+    required: true, 
+    unique: true 
+  },
+  password: { 
+    type: String, 
+    required: true 
+  },
+  hasVehicle: { 
+    type: Boolean, 
+    default: false 
+  },
+  role: { 
+    type: String, 
+    default: 'assistant' 
+  }
 }, { timestamps: true });
 
-// Password comparison for Login
-assistantSchema.methods.matchPassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
-};
-
-// Hash password before saving during Registration
-assistantSchema.pre('save', async function (next) {
+// Pre-save hook to hash password before saving to database
+assistantSchema.pre('save', async function () {
+  // Only hash the password if it has been modified (or is new)
   if (!this.isModified('password')) {
-    next();
+    return; // Notice we just return, no next()
   }
+
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
 });
+
+// Method to compare entered password with hashed password
+assistantSchema.methods.matchPassword = async function (enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
 
 module.exports = mongoose.model('Assistant', assistantSchema);

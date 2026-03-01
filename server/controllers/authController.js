@@ -1,6 +1,6 @@
 const User = require('../models/User');
-const Assistant = require('../models/Assistant'); // Import the Assistant Model
-const generateToken = require('../utils/generateToken');
+const Assistant = require('../models/Assistant');
+const generateToken = require('../utils/generateToken'); // Make sure you have this utility!
 
 // @desc    Register new user OR assistant
 // @route   POST /api/auth/register
@@ -8,13 +8,24 @@ const registerUser = async (req, res) => {
   try {
     const { name, phone, password, role, emergencyContact, hasVehicle } = req.body;
 
-    // IF ROLE IS ASSISTANT
+    // 1. Basic Validation
+    if (!name || !phone || !password || !role) {
+      return res.status(400).json({ message: 'Please provide all required fields' });
+    }
+
+    // 2. Role-Based Switch: Handle Assistant Registration
     if (role === 'assistant') {
       const assistantExists = await Assistant.findOne({ phone });
-      if (assistantExists) return res.status(400).json({ message: 'Caregiver already exists!' });
+      if (assistantExists) {
+        return res.status(400).json({ message: 'Assistant with this phone number already exists' });
+      }
 
       const assistant = await Assistant.create({
-        name, phone, password, hasVehicle
+        name,
+        phone,
+        password, // Hashed by the pre-save hook in the model
+        hasVehicle: hasVehicle || false,
+        role: 'assistant'
       });
 
       if (assistant) {
@@ -23,17 +34,28 @@ const registerUser = async (req, res) => {
           name: assistant.name,
           phone: assistant.phone,
           role: assistant.role,
-          token: generateToken(assistant._id),
+          token: generateToken(assistant._id)
         });
       }
     } 
-    // IF ROLE IS USER (Default)
-    else {
+    
+    // 3. Role-Based Switch: Handle User Registration
+    else if (role === 'user') {
       const userExists = await User.findOne({ phone });
-      if (userExists) return res.status(400).json({ message: 'User already exists!' });
+      if (userExists) {
+        return res.status(400).json({ message: 'User with this phone number already exists' });
+      }
+
+      if (!emergencyContact) {
+        return res.status(400).json({ message: 'Emergency contact is required for users' });
+      }
 
       const user = await User.create({
-        name, phone, password, emergencyContact
+        name,
+        phone,
+        password, // Hashed by the pre-save hook in the model
+        emergencyContact,
+        role: 'user' 
       });
 
       if (user) {
@@ -41,44 +63,65 @@ const registerUser = async (req, res) => {
           _id: user._id,
           name: user.name,
           phone: user.phone,
-          role: 'user',
-          token: generateToken(user._id),
+          role: user.role,
+          token: generateToken(user._id)
         });
       }
+    } else {
+      return res.status(400).json({ message: 'Invalid role specified' });
     }
 
-    res.status(400).json({ message: 'Invalid data' });
+    res.status(400).json({ message: 'Invalid user data' });
+
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("REGISTER API ERROR:", error.message);
+    res.status(500).json({ message: 'Server Error', error: error.message });
   }
 };
 
-// @desc    Login user OR assistant
+// @desc    Auth user/assistant & get token
 // @route   POST /api/auth/login
 const loginUser = async (req, res) => {
   try {
-    const { phone, password, role } = req.body; // Frontend MUST send the role now during login!
+    const { phone, password, role } = req.body;
 
-    // Determine which collection to search based on the role
-    const Model = role === 'assistant' ? Assistant : User;
-    
-    const account = await Model.findOne({ phone });
+    // 1. Basic Validation
+    if (!phone || !password || !role) {
+      return res.status(400).json({ message: 'Please provide phone, password, and role' });
+    }
 
-    // Check if account exists AND password matches
+    let account = null;
+
+    // 2. Role-Aware Database Query
+    if (role === 'assistant') {
+      account = await Assistant.findOne({ phone });
+    } else if (role === 'user') {
+      account = await User.findOne({ phone });
+    } else {
+      return res.status(400).json({ message: 'Invalid role selected' });
+    }
+
+    // 3. Verify Account Exists AND Password Matches
     if (account && (await account.matchPassword(password))) {
       res.json({
         _id: account._id,
         name: account.name,
         phone: account.phone,
-        role: role || 'user', // Send role back to frontend
-        token: generateToken(account._id),
+        role: account.role,
+        token: generateToken(account._id)
       });
     } else {
-      res.status(401).json({ message: 'Invalid phone number or password' });
+      res.status(401).json({ message: 'Invalid phone number or password' }); 
     }
+
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("LOGIN API ERROR:", error.message);
+    res.status(500).json({ message: 'Server Error', error: error.message });
   }
 };
 
-module.exports = { registerUser, loginUser };
+// CRITICAL: Export both functions so the router can see them
+module.exports = {
+  registerUser,
+  loginUser
+};
